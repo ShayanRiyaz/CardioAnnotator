@@ -17,12 +17,11 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path, include
-from dashboard.views import home
+from dashboard.views import annotation
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', home, name='home'),
+    path('', annotation, name='annotation'),
 
-    # 👇 This is the fix
     path('django_plotly_dash/', include('django_plotly_dash.urls')),
 ]
