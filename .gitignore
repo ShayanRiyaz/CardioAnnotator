@@ -1,0 +1,53 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+pip-wheel-metadata/
+*.egg-info/
+
+# Django stuff
+*.log
+db.sqlite3
+media/
+staticfiles/
+
+# Dash & frontend (if using React/Vite/webpack)
+node_modules/
+*.tsbuildinfo
+dash_renderer/
+
+# Secrets
+.env
+.env.*        # e.g., .env.dev, .env.prod
+settings_local.py
+config.yaml
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints
+
+# MyPy / Pylint
+.mypy_cache/
+.dmypy.json
+.pyre/
+
+# MacOS / Windows
+.DS_Store
+Thumbs.db
+
+# VSCode / PyCharm
+.vscode/
+.idea/

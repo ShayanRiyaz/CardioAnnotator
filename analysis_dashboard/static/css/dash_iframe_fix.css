@@ -1,0 +1,23 @@
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 40%;
+    overflow:'hidden;'
+  }
+
+
+div[class*="django-plotly-dash-app"] {
+  padding-bottom: 10% !important;
+  height: 50%!important;
+  overflow: 'hidden' !important;
+}
+
+div[class*="django-plotly-dash-app"] > iframe {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 40% !important;
+  height: 40% !important;
+  overflow: 'hidden' !important;
+} 
