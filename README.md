@@ -2,7 +2,8 @@
 
 # Current Work:
 
-![alt text](image-1.png)
+![image](https://github.com/user-attachments/assets/e0beff56-9ec1-46d8-871a-36df3b89460d)
+
 
 
 # Instructions:
