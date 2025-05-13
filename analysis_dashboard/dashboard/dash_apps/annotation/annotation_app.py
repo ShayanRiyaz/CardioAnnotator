@@ -156,7 +156,6 @@ def modify_peak_logic(clickData, ann, window_idx, mode):
       Input('annotations','data') ]
 )
 def update_plots(window_idx, annotations):
-
     # ctx       = callback_context
     # triggered = ctx.triggered[0]['prop_id'] if ctx.triggered else None
 
