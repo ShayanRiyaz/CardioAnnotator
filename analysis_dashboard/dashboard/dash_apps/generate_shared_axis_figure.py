@@ -15,10 +15,10 @@ def generate_shared_xaxis_figure(y_ecg, y_ppg, y_abp, t):
         vertical_spacing=0.1,  # Adjust vertical spacing between subplots
         subplot_titles=("Electro-Cardiogram (ECG)", "Photo-Plethysmography (PPG)", "Arterial Blood Pressure (ABP)")
     )
-
-    fig.add_trace(go.Scatter(x=t, y=y_ecg, name="ECG"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=t, y=y_ppg, name="PPG"), row=2, col=1)
-    fig.add_trace(go.Scatter(x=t, y=y_abp, name="ABP"), row=3, col=1) # , mode="lines+markers",marker=dict(opacity=1),line=dict(width=1)
+    
+    fig.add_trace(go.Scatter(x=t, y=y_ecg,mode='lines+markers', marker=dict(size=6, opacity=0), meta={'signal': 'ecg'},customdata=[{'signal':'ecg'}]*len(t), name='ecg-base'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=t, y=y_ppg,mode='lines+markers', marker=dict(size=6, opacity=0), meta={'signal': 'ppg'},customdata=[{'signal':'ppg'}]*len(t), name='ppg-base'), row=2, col=1)
+    fig.add_trace(go.Scatter(x=t, y=y_abp,mode='lines+markers', marker=dict(size=6, opacity=0), meta={'signal': 'abp'},customdata=[{'signal':'abp'}]*len(t), name='abp-base'), row=3, col=1) # , mode="lines+markers",marker=dict(opacity=1),line=dict(width=1)
 
 
     for i, title in enumerate(["Electro-Cardiogram (ECG)", "Photo-Plethysmography (PPG)", "Arterial Blood Pressure (ABP)"]):

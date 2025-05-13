@@ -1,10 +1,12 @@
 from dash.dependencies import Input, Output, State
-import json
-from dash import dcc, html
+from dash import dcc, html,callback_context
 import dash_bootstrap_components as dbc
 from django_plotly_dash import DjangoDash
 from dash.exceptions import PreventUpdate
 import plotly.graph_objects as go
+import json
+import numpy as np
+
 from .annotation_layout import serve_layout
 from ..generate_shared_axis_figure import generate_shared_xaxis_figure
 from ..get_data import FS, WIN_SAMPLES, NUM_WINDOWS,session,WIN_LEN_SEC
@@ -13,11 +15,11 @@ from ..get_data import FS, WIN_SAMPLES, NUM_WINDOWS,session,WIN_LEN_SEC
 app = DjangoDash("SignalAnnotator", external_stylesheets=[dbc.themes.BOOTSTRAP],serve_locally=False)
 app.layout = serve_layout
 
-from dash.dependencies import Input, Output, State
-from dash.exceptions import PreventUpdate
-import plotly.graph_objects as go
-import json
-from dash import html
+initial_ann = {
+    'ecg': {'sample_peak_positions': [],'time_peak_positions': [], 'windows': []},
+    'ppg': {'sample_peak_positions': [],'time_peak_positions': [], 'windows': []},
+    'abp': {'sample_peak_positions': [],'time_peak_positions': [], 'windows': []}
+    }
 
 # 1) Navigation stays the same
 @app.callback(
@@ -40,91 +42,113 @@ def navigate(prev_ts, next_ts, go_ts, current_idx, jump_sec):
     # go
     if jump_sec is None or jump_sec < 0:
         return current_idx
-    idx = int((jump_sec * FS) // WIN_SAMPLES)
-    return max(0, min(idx, NUM_WINDOWS - 1))
+    current_idx = int((jump_sec * FS) // WIN_SAMPLES)
+    return max(0, min(current_idx, NUM_WINDOWS - 1))
 
-# 2) Annotation click callback
-@app.callback(
-    Output('annotations', 'data'),
-    [
-      Input('signal-plots',   'clickData'),
-      Input('mode-selector',  'value'),
-    ],
-    [
-      State('annotations',    'data'),
-      State('current-window', 'data'),
-    ]
-)
-def modify_peak(clickData, mode, annotations, window_idx):
-    if not clickData:
-        # Only fires when you actually click the graph
-        raise PreventUpdate
 
-    # Which trace? 0=ECG,1=PPG,2=ABP
-    trace_i = clickData['points'][0]['curveNumber']
-    sig     = {0: 'ecg', 1: 'ppg', 2: 'abp'}[trace_i]
 
-    # Convert click X (sec into window) → global sample index
-    peak_amplitude = clickData['points'][0]['y']
-    t_rel      = clickData['points'][0]['x']
-    sample_idx =  int(t_rel * FS)
+def modify_peak_logic(clickData, ann, window_idx, mode):
+    """
+    clickData   : the dict from dcc.Graph.clickData
+    ann         : the existing annotations dict (may be {})
+    window_idx  : zero‐based index of the current window
+    mode        : 'add' or 'remove'
+    returns     : a NEW annotations dict with the one peak added or removed
+    """
+    # 1) shallow-copy the top-level dict so we don't mutate in place
+    new_ann = { sig: data.copy() for sig, data in (ann or {}).items() }
 
-    # Initialize or update your annotations dict
-    ann   = annotations if isinstance(annotations, dict) else {}
-    sample_peaks = ann.setdefault(sig, {}).setdefault('sample_peak_positions', [])
-    time_peaks = ann.setdefault(sig, {}).setdefault('time_peak_positions', [])
-    peak_amplitudes = ann.setdefault(sig, {}).setdefault('peak_amplitudes', [])
+    # 2) unpack click info
+    pt          = clickData['points'][0]
 
+    try:
+        sig = pt['customdata']['signal']          # 'ecg' / 'ppg' / 'abp'
+    except:
+        return
+    t_rel       = pt['x']                             # seconds into this window
+    local_idx   = pt['pointIndex']                    # 0…WIN_SAMPLES-1
+    sample_idx  = window_idx * WIN_SAMPLES + local_idx
+
+    # 3) make sure this signal has its lists in place
+    sd          = new_ann.setdefault(sig, {})
+    sp          = sd.setdefault('sample_peak_positions', [])
+    tp          = sd.setdefault('time_peak_positions',   [])
+
+    # 4) add or remove
     if mode == 'add':
-        if sample_idx not in sample_peaks:
-            sample_peaks.append(sample_idx)
-            time_peaks.append(t_rel)
-            peak_amplitudes.append(peak_amplitude)
-    else:  # mode == 'remove'
-        sample_peaks[:] = [p for p in sample_peaks if abs(p - sample_idx) > 1]
-        time_peaks[:] = [p for p in time_peaks if abs(p - time_peaks) > 1]
-        time_peaks[:] = [p for p in peak_amplitudes if abs(p - peak_amplitudes) > 1]
+        if sample_idx not in sp:
+            sp.append(sample_idx)
+            tp.append(t_rel)
 
-    ann[sig]['sample_peak_positions'] = sorted(sample_peaks)
-    ann[sig]['time_peak_positions'] = sorted(time_peaks)
-    ann[sig]['peak_amplitudes'] = sorted(peak_amplitudes)
-    return ann
+    else:  # remove
+        # drop any peak within ±1 sample of the click
+        pairs = list(zip(sp, tp))
+        kept  = [(s, t) for s, t in pairs if abs(s - sample_idx) > 1]
+        if kept:
+            sp[:], tp[:] = zip(*kept)
+        else:
+            sp.clear()
+            tp.clear()
+
+    # 5) re‐sort so everything stays in chronological order
+    sorted_pairs = sorted(zip(sp, tp), key=lambda st: st[0])
+    sp[:] = [s for s, _ in sorted_pairs]
+    tp[:] = [t for _, t in sorted_pairs]
+
+    new_ann[sig]['sample_peak_positions'] = sp
+    new_ann[sig]['time_peak_positions']   = tp
+    return new_ann
+
+# # 2) Annotation click callback
 # @app.callback(
 #     Output('annotations', 'data'),
-#     [
-#       Input('signal-plots',   'clickData'),
-#       Input('mode-selector',  'value'),
-#       Input('current-window','data'),       # ← make this an Input
-#     ],
-#     [
+#     [Input('signal-plots',   'clickData')],
+#     [State('mode-selector',  'value'),
 #       State('annotations',    'data'),
-#     ]
-# )
-# def modify_peak(clickData, mode, window_idx, annotations):
+#       State('current-window', 'data')],
+#     prevent_initial_call=True)
 
+# def modify_peak(clickData, mode, annotations, window_idx):
 #     if not clickData:
+#         # Only fires when you actually click the graph
 #         raise PreventUpdate
 
-#     # Which subplot: ECG=0, PPG=1, ABP=2
-#     trace_i = clickData['points'][0]['curveNumber']
-#     sig     = {0:'ecg',1:'ppg',2:'abp'}[trace_i]
+#     pt  = clickData['points'][0]
+#     sig = pt['customdata']['signal']
 
-#     # Convert click X (sec in window) → global sample index
-#     t_rel      = clickData['points'][0]['x']
-#     sample_idx = window_idx * WIN_SAMPLES + int(t_rel * FS)
+#     t_rel     = pt['x']                        # seconds into this window
+#     point_idx = pt['pointIndex']               # 0–WIN_SAMPLES-1 local index
+#     point_idx = point_idx + window_idx*WIN_SAMPLES
 
-#     # Initialize the store
+#     # Initialize or update your annotations dict
 #     ann   = annotations if isinstance(annotations, dict) else {}
-#     peaks = ann.setdefault(sig, {}).setdefault('peaks', [])
+#     sample_peaks = ann.setdefault(sig, {}).setdefault('sample_peak_positions', [])
+#     time_peaks = ann.setdefault(sig, {}).setdefault('time_peak_positions', [])
 
 #     if mode == 'add':
-#         if sample_idx not in peaks:
-#             peaks.append(sample_idx)
-#     else:  # remove
-#         peaks[:] = [p for p in peaks if abs(p - sample_idx) > 1]
+#         if point_idx not in sample_peaks:
+#             sample_peaks.append(point_idx)
+#             time_peaks.append(t_rel)
+#     else:  # remove mode
+#         # zip together, filter out any pair close to the clicked idx
+#         pairs = list(zip(sample_peaks, time_peaks))
+#         # choose a tolerance in samples (here ±1 sample)
+#         tol = 1
+#         kept = [(s,t) for s,t in pairs if abs(s - point_idx) > tol]
+#         # unzip back
+#         sample_peaks[:] = [s for s,t in kept]
+#         time_peaks[:]   = [t for s,t in kept]
 
-#     ann[sig]['peaks'] = sorted(peaks)
+#     # sort by sample index (and keep time_peaks aligned)
+#     sorted_pairs = sorted(zip(sample_peaks, time_peaks), key=lambda st: st[0])
+#     sample_peaks[:] = [s for s,_ in sorted_pairs]
+#     time_peaks[:]   = [t for _,t in sorted_pairs]
+
+#     ann[sig]['sample_peak_positions'] = sample_peaks
+#     ann[sig]['time_peak_positions']   = time_peaks
+
 #     return ann
+
 # 3) Redraw on window or annotation change
 @app.callback(
     Output('signal-plots','figure'),
@@ -132,6 +156,15 @@ def modify_peak(clickData, mode, annotations, window_idx):
       Input('annotations','data') ]
 )
 def update_plots(window_idx, annotations):
+
+    # ctx       = callback_context
+    # triggered = ctx.triggered[0]['prop_id'] if ctx.triggered else None
+
+    # # ONLY treat clear-all as a clear if the user actually clicked (n_clicks > 0)
+    # if triggered == 'clear-all-btn.n_clicks' and clear_n and clear_n > 0:
+    #     # force annotations to empty
+    #     annotations = { sig: {'sample_peak_positions': [], 'time_peak_positions': []}
+    #                     for sig in annotations.keys() }
     # slice your real data
     start = window_idx * WIN_SAMPLES
     end   = start + WIN_SAMPLES
@@ -142,29 +175,100 @@ def update_plots(window_idx, annotations):
 
     # build figure
     fig = generate_shared_xaxis_figure(ecg, ppg, abp, t)
+    fig.data = [
+    tr for tr in fig.data
+    if not (isinstance(tr.uid, str) and tr.uid.endswith("-manual-"))]
 
-    # overlay manual peaks
-    row_map = {'ecg':1,'ppg':2,'abp':3}
-    start_window = start/FS
-    end_window = end/FS
+    peak_color_map = {'ecg':'red','ppg':'blue','abp':'black'}
+    row_map        = {'ecg':1,'ppg':2,'abp':3}
+
+    start_sample = window_idx * WIN_SAMPLES
+    end_sample   = start_sample + WIN_SAMPLES
+
+    # vectorized overlay:
     for sig, data in (annotations or {}).items():
-        time_peaks = data.get('time_peak_positions', [])
-        amps       = data.get('peak_amplitudes',       [])
-        for idx, (x, y) in enumerate(zip(time_peaks, amps)):
-            if  start_window <= x < end_window:
-                fig.add_trace(go.Scatter(
-                    x=[x], y=[y],
-                    mode='markers',
-                    marker_symbol='x', marker_size=10,
-                    name=f"{sig} manual"
-                ), row=row_map[sig], col=1)
+        # load lists into arrays
+        samples = np.array(data.get('sample_peak_positions', []), dtype=int)
+        times   = np.array(data.get('time_peak_positions',    []), dtype=float)
+
+        # mask down to the current window
+        mask  = (samples >= start_sample) & (samples <  end_sample)
+        if not mask.any():
+            continue
+
+        win_samples = samples[mask]
+        win_times   = times[mask]
+        # fetch y-values in one vectorized slice
+        y_vals      = session.signals[sig][win_samples]
+
+        # add a single scatter trace for all peaks of this signal
+        fig.add_trace(
+            go.Scatter(x=win_times,y=y_vals,
+                mode='markers',name=f"{sig}-manual-{win_samples}",showlegend=False,
+                marker=dict(
+                    symbol='x',
+                    size=10,
+                    color=peak_color_map[sig]
+                ),
+            ),
+            row=row_map[sig], col=1)
+
     return fig
 
-# 4) Quick debug panel
+
+@app.callback(
+    Output('annotations', 'data'),
+    [
+      Input('signal-plots',  'clickData'),
+      Input('clear-all-btn', 'n_clicks')
+    ],
+    [
+      State('mode-selector',  'value'),
+      State('annotations',     'data'),
+      State('current-window',  'data')
+    ],
+    prevent_initial_call=True
+)
+def modify_annotations(clickData, clear_n, mode, ann, window_idx):
+    # 1) Figure out what fired us
+    new_ann = { sig: data.copy() for sig, data in (ann or {}).items() }
+
+
+    if clickData:
+        return modify_peak_logic(clickData, new_ann, window_idx, mode)
+
+    elif clear_n:
+        # 2) Start from the existing store (or empty template)
+        new_ann = ann.copy() if isinstance(ann, dict) else initial_ann.copy()
+        # only clear this window’s peaks
+        start, end = window_idx*WIN_SAMPLES, (window_idx+1)*WIN_SAMPLES
+        for sig, data in new_ann.items():
+            sp = data.get('sample_peak_positions', [])
+            tp = data.get('time_peak_positions',    [])
+            kept = [(s,t) for s,t in zip(sp,tp) if not (start <= s < end)]
+            if kept:
+                s_kept, t_kept = map(list, zip(*kept))
+            else:
+                s_kept, t_kept = [], []
+            new_ann[sig]['sample_peak_positions'] = s_kept
+            new_ann[sig]['time_peak_positions']   = t_kept
+        return new_ann
+    
+    else:
+        raise PreventUpdate
+    
+        # nothing relevant clicked
+   
+
+
+
+
+
+
 @app.callback(
     Output('metadata-display','children'),
     [ Input('annotations','data'),
-      Input('current-window','data') ]
+      Input('current-window','data') ],
 )
 def debug_annotations(ann, widx):
     """

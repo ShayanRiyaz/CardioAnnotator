@@ -1,0 +1,3 @@
+    fig.data = [
+    tr for tr in fig.data
+    if not (isinstance(tr.uid, str) and tr.uid.endswith("-manual-"))]
