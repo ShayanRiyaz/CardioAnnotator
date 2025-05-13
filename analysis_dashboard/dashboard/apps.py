@@ -5,5 +5,4 @@ class DashboardConfig(AppConfig):
     name = 'dashboard'
 
     def ready(self):
-        # Import the Dash app here so DjangoPlotlyDash can register it
-        import dashboard.dash_apps.my_dash_app
+        import dashboard.dash_apps.annotation.annotation_app
