@@ -2,8 +2,9 @@ from dash import html, dcc
 import dash_bootstrap_components as dbc
 from ..generate_shared_axis_figure import generate_shared_xaxis_figure
 import numpy as np
-from ..get_data import WIN_SAMPLES
+from ..get_data import WIN_SAMPLES,get_subject_ids,to_json_serializable
 
+subject_options = [{"label": sid, "value": sid} for sid in get_subject_ids()]
 
 title_row_style = {
         'paddingTop': '0.25rem',
@@ -39,8 +40,27 @@ zeros = np.zeros(WIN_SAMPLES)
 initial_fig = generate_shared_xaxis_figure(zeros, zeros, zeros, zeros)
 def serve_layout():
     return dbc.Container([
-        dcc.Store(id='current-window', data=0,storage_type='session'),
-        dcc.Store(id='annotations', data=initial_ann,storage_type='session'),
+        dcc.Store(id='annotations', data=initial_ann),
+        dcc.Store(id="subject-data-cache"),
+        dcc.Store(id='subject-metadata-cache', data={}),
+        dcc.Store(id='current-subject-id', data=None),
+        dcc.Store(id='current-window', data=0),
+
+        html.Div([
+        html.Label("Select Subject:", style={"marginRight": "10px"}),
+        dcc.Dropdown(
+            id='subject-dropdown',
+            options=subject_options,
+            placeholder='Select a subject',
+            style={'width': '300px'}
+        ),
+        html.Button('Load Subject', id='load-subject-btn', n_clicks=0, style={"marginLeft": "10px"})
+    ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '20px'}),
+
+    # dcc.Store(id='subject-data-cache', data={}),
+    # dcc.Store(id='current-subject-id', data=None),
+
+    html.Div(id='signal-display-container'),
         
         dbc.Row([
                 html.H1(
@@ -133,3 +153,5 @@ def serve_layout():
 
 
         ], fluid=True, style={'height': '50%', 'padding': '0', 'margin': '0'})
+
+

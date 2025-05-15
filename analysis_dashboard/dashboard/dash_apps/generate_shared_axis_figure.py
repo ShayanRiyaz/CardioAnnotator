@@ -6,7 +6,6 @@ from plotly.subplots import make_subplots
 
 def generate_shared_xaxis_figure(y_ecg, y_ppg, y_abp, t):
     X_AXES_FONT_SIZE = Y_AXES_FONT_SIZE = 12
-    print(t)
     X_AXIS_RANGE = [t[0],t[-1]+(t[1]-t[0])]
     fig = make_subplots(
         rows=3,
@@ -16,9 +15,12 @@ def generate_shared_xaxis_figure(y_ecg, y_ppg, y_abp, t):
         subplot_titles=("Electro-Cardiogram (ECG)", "Photo-Plethysmography (PPG)", "Arterial Blood Pressure (ABP)")
     )
     
-    fig.add_trace(go.Scatter(x=t, y=y_ecg,mode='lines+markers', marker=dict(size=6, opacity=0), meta={'signal': 'ecg'},customdata=[{'signal':'ecg'}]*len(t), name='ecg-base'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=t, y=y_ppg,mode='lines+markers', marker=dict(size=6, opacity=0), meta={'signal': 'ppg'},customdata=[{'signal':'ppg'}]*len(t), name='ppg-base'), row=2, col=1)
-    fig.add_trace(go.Scatter(x=t, y=y_abp,mode='lines+markers', marker=dict(size=6, opacity=0), meta={'signal': 'abp'},customdata=[{'signal':'abp'}]*len(t), name='abp-base'), row=3, col=1) # , mode="lines+markers",marker=dict(opacity=1),line=dict(width=1)
+    fig.add_trace(go.Scatter(x=t, y=y_ecg,mode='lines+markers', marker=dict(size=6, opacity=0), meta={'signal': 'ecg'},customdata=[{'signal':'ecg'}]*len(t), name='ecg-base',hovertemplate='Time: %{x:.3f}s<br>Value: %{y:.3f}<extra></extra>',
+                             ), row=1, col=1)
+    fig.add_trace(go.Scatter(x=t, y=y_ppg,mode='lines+markers', marker=dict(size=6, opacity=0), meta={'signal': 'ppg'},customdata=[{'signal':'ppg'}]*len(t), name='ppg-base',hovertemplate='Time: %{x:.3f}s<br>Value: %{y:.3f}<extra></extra>',
+                             ), row=2, col=1)
+    fig.add_trace(go.Scatter(x=t, y=y_abp,mode='lines+markers', marker=dict(size=6, opacity=0), meta={'signal': 'abp'},customdata=[{'signal':'abp'}]*len(t), name='abp-base',hovertemplate='Time: %{x:.3f}s<br>Value: %{y:.3f}<extra></extra>',
+                             ), row=3, col=1) # , mode="lines+markers",marker=dict(opacity=1),line=dict(width=1)
 
 
     for i, title in enumerate(["Electro-Cardiogram (ECG)", "Photo-Plethysmography (PPG)", "Arterial Blood Pressure (ABP)"]):
