@@ -76,7 +76,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'analysis_dashboard.wsgi.application'
-
+# DATA_UPLOAD_MAX_MEMORY_SIZE = 1024*
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases

@@ -1,36 +1,75 @@
+import dash, json
+
 from dash.dependencies import Input, Output, State
-from dash import dcc, html,callback_context
+from dash import html,no_update
 import dash_bootstrap_components as dbc
 from django_plotly_dash import DjangoDash
 from dash.exceptions import PreventUpdate
-import plotly.graph_objects as go
-import json
-import numpy as np
 
-from .annotation_layout import serve_layout
+from .annotation_layout import serve_layout,initial_ann
 from ..generate_shared_axis_figure import generate_shared_xaxis_figure
-from ..get_data import FS, WIN_SAMPLES, NUM_WINDOWS,session,WIN_LEN_SEC
+from ..get_data import FS, WIN_SAMPLES, NUM_WINDOWS,WIN_LEN_SEC,to_json_serializable,overlay_annotations,load_subject_metadata,load_window_slice
 
 # Init Dash app
 app = DjangoDash("SignalAnnotator", external_stylesheets=[dbc.themes.BOOTSTRAP],serve_locally=False)
 app.layout = serve_layout
 
-initial_ann = {
-    'ecg': {'sample_peak_positions': [],'time_peak_positions': [], 'windows': []},
-    'ppg': {'sample_peak_positions': [],'time_peak_positions': [], 'windows': []},
-    'abp': {'sample_peak_positions': [],'time_peak_positions': [], 'windows': []}
-    }
+
+
+@app.callback(
+    Output('subject-metadata-cache', 'data'),
+    Output('current-subject-id', 'data'),
+    Output('current-window', 'data', allow_duplicate=True),
+    Input('load-subject-btn', 'n_clicks'),
+    State('subject-dropdown', 'value'),
+    State('subject-metadata-cache', 'data'),
+    prevent_initial_call=True
+)
+def load_subject_metadata_callback(n_clicks, subj_id, metadata_cache):
+    if not n_clicks or not subj_id:
+        raise PreventUpdate
+
+    if metadata_cache is None:
+        metadata_cache = {}
+
+    # Check if window 0 data for this subject is already cached
+    if subj_id in metadata_cache and \
+       'windows' in metadata_cache[subj_id] and \
+       0 in metadata_cache[subj_id]['windows']:
+        # If already cached, just update current subject and don't modify cache or trigger reset
+        return no_update, subj_id,0
+
+    # Ensure the subject entry and 'windows' dictionary exist
+    if subj_id not in metadata_cache:
+        metadata_cache[subj_id] = {}
+    if 'windows' not in metadata_cache[subj_id]:
+        metadata_cache[subj_id]['windows'] = {}
+
+    # Load data for window 0
+    window_0_data = load_window_slice(subj_id, 0)
+    serializable_window_0_data = to_json_serializable(window_0_data)
+
+    # Store window 0 data in the cache
+    metadata_cache[subj_id]['windows'][0] = serializable_window_0_data
+
+    return metadata_cache, subj_id,0
 
 # 1) Navigation stays the same
 @app.callback(
     Output('current-window','data'),
     [Input('prev-window-btn','n_clicks_timestamp'),
+     
      Input('next-window-btn','n_clicks_timestamp'),
      Input('jump-go-btn','n_clicks_timestamp')],
+     Input('load-subject-btn', 'n_clicks'),
     [State('current-window','data'),
-     State('jump-to-input','value')]
+     State('jump-to-input','value')],prevent_initial_call=True
 )
-def navigate(prev_ts, next_ts, go_ts, current_idx, jump_sec):
+def navigate(prev_ts, next_ts, go_ts,load_subject_check, current_idx, jump_sec):
+    ctx = dash.callback_context
+    trigger_id = ctx.triggered[0]['prop_id']
+    if trigger_id == 'load-subject-btn.n_clicks':
+        return min(current_idx + 1, NUM_WINDOWS - 1)
     times = {'prev': prev_ts or 0, 'next': next_ts or 0, 'go': go_ts or 0}
     last  = max(times, key=times.get)
     if times[last] == 0:
@@ -45,8 +84,97 @@ def navigate(prev_ts, next_ts, go_ts, current_idx, jump_sec):
     current_idx = int((jump_sec * FS) // WIN_SAMPLES)
     return max(0, min(current_idx, NUM_WINDOWS - 1))
 
+# 3) Redraw on window or annotation change
+@app.callback(
+    Output("signal-plots", "figure"),
+    Input("current-window", "data"),
+    Input("annotations", "data"),
+    State("current-subject-id", "data"),
+    
+    prevent_initial_call=True
+)
+def update_plots(window_idx,annotations, subj_id):
+    if (window_idx is None) or subj_id is None:
+        raise PreventUpdate
+    
+    window_data = load_window_slice(subj_id, window_idx)
+    fs = window_data["fs"]
+    t, ppg, ecg, abp = window_data["t"], window_data["ppg"], window_data["ecg"], window_data["bp"]
 
+    fig = generate_shared_xaxis_figure(ecg, ppg, abp, t)
+    fig = overlay_annotations(fig, annotations, subj_id, window_idx, fs, WIN_SAMPLES)
+    return fig
 
+@app.callback(
+    Output('annotations', 'data'),
+    Output('signal-plots', 'clickData'),
+    [
+      Input('signal-plots',  'clickData'),
+      Input('clear-all-btn', 'n_clicks'),
+      Input('load-subject-btn', 'n_clicks'),
+      Input('add-label-btn',  'n_clicks'),
+    ],
+    [
+      State('mode-selector',  'value'),
+      State('annotations',     'data'),
+      State('current-window',  'data'),
+      State('window-label-dropdown', 'value'),
+
+    ],
+    prevent_initial_call=True
+)
+def modify_annotations(clickData, clear_all_clicked,load_subject_clicked,add_label_button_clicked,mode, ann, window_idx,label_value):
+    ctx = dash.callback_context
+    trigger_id = ctx.triggered[0]['prop_id']
+    if trigger_id is None:
+        raise PreventUpdate
+    
+    if trigger_id == 'add-label-btn.n_clicks':
+        print(label_value)
+        ann = ann.copy()
+        # Overwrite the single-string label
+        ann['window_label'] = label_value
+        return ann, None
+
+    if trigger_id == 'load-subject-btn.n_clicks':
+        return initial_ann.copy(), None
+        
+    # # 1) Figure out what fired us
+    new_ann = {
+    sig: (data.copy() if isinstance(data, dict) else data)
+    for sig, data in (ann or {}).items()
+    }
+
+    if trigger_id == 'signal-plots.clickData':
+        return modify_peak_logic(clickData, new_ann, window_idx, mode), None
+
+    elif trigger_id == 'clear-all-btn.n_clicks':
+        # 2) Start from the existing store (or empty template)
+        base = ann.copy() if isinstance(ann, dict) else initial_ann.copy()
+
+        # 2) now shallow-copy only the dict‐valued entries
+        new_ann = {
+            key: (val.copy() if isinstance(val, dict) else val)
+            for key, val in base.items()
+        }
+        # only clear this window’s peaks
+        start, end = window_idx*WIN_SAMPLES, (window_idx+1)*WIN_SAMPLES
+        for sig, data in new_ann.items():
+            if sig == 'window_label': continue
+            sp = data.get('sample_peak_positions', [])
+            tp = data.get('time_peak_positions',    [])
+            kept = [(s,t) for s,t in zip(sp,tp) if not (start <= s < end)]
+            if kept:
+                s_kept, t_kept = map(list, zip(*kept))
+            else:
+                s_kept, t_kept = [], []
+            new_ann[sig]['sample_peak_positions'] = s_kept
+            new_ann[sig]['time_peak_positions']   = t_kept
+        return new_ann, None
+    
+    else:
+        raise PreventUpdate
+    
 def modify_peak_logic(clickData, ann, window_idx, mode):
     """
     clickData   : the dict from dcc.Graph.clickData
@@ -56,15 +184,17 @@ def modify_peak_logic(clickData, ann, window_idx, mode):
     returns     : a NEW annotations dict with the one peak added or removed
     """
     # 1) shallow-copy the top-level dict so we don't mutate in place
-    new_ann = { sig: data.copy() for sig, data in (ann or {}).items() }
-
+    new_ann = {
+    sig: (data.copy() if isinstance(data, dict) else data)
+    for sig, data in (ann or {}).items()
+    }
     # 2) unpack click info
     pt          = clickData['points'][0]
 
     try:
         sig = pt['customdata']['signal']          # 'ecg' / 'ppg' / 'abp'
-    except:
-        return
+    except (KeyError, TypeError, IndexError):
+        raise PreventUpdate 
     t_rel       = pt['x']                             # seconds into this window
     local_idx   = pt['pointIndex']                    # 0…WIN_SAMPLES-1
     sample_idx  = window_idx * WIN_SAMPLES + local_idx
@@ -99,226 +229,63 @@ def modify_peak_logic(clickData, ann, window_idx, mode):
     new_ann[sig]['time_peak_positions']   = tp
     return new_ann
 
-# # 2) Annotation click callback
-# @app.callback(
-#     Output('annotations', 'data'),
-#     [Input('signal-plots',   'clickData')],
-#     [State('mode-selector',  'value'),
-#       State('annotations',    'data'),
-#       State('current-window', 'data')],
-#     prevent_initial_call=True)
-
-# def modify_peak(clickData, mode, annotations, window_idx):
-#     if not clickData:
-#         # Only fires when you actually click the graph
-#         raise PreventUpdate
-
-#     pt  = clickData['points'][0]
-#     sig = pt['customdata']['signal']
-
-#     t_rel     = pt['x']                        # seconds into this window
-#     point_idx = pt['pointIndex']               # 0–WIN_SAMPLES-1 local index
-#     point_idx = point_idx + window_idx*WIN_SAMPLES
-
-#     # Initialize or update your annotations dict
-#     ann   = annotations if isinstance(annotations, dict) else {}
-#     sample_peaks = ann.setdefault(sig, {}).setdefault('sample_peak_positions', [])
-#     time_peaks = ann.setdefault(sig, {}).setdefault('time_peak_positions', [])
-
-#     if mode == 'add':
-#         if point_idx not in sample_peaks:
-#             sample_peaks.append(point_idx)
-#             time_peaks.append(t_rel)
-#     else:  # remove mode
-#         # zip together, filter out any pair close to the clicked idx
-#         pairs = list(zip(sample_peaks, time_peaks))
-#         # choose a tolerance in samples (here ±1 sample)
-#         tol = 1
-#         kept = [(s,t) for s,t in pairs if abs(s - point_idx) > tol]
-#         # unzip back
-#         sample_peaks[:] = [s for s,t in kept]
-#         time_peaks[:]   = [t for s,t in kept]
-
-#     # sort by sample index (and keep time_peaks aligned)
-#     sorted_pairs = sorted(zip(sample_peaks, time_peaks), key=lambda st: st[0])
-#     sample_peaks[:] = [s for s,_ in sorted_pairs]
-#     time_peaks[:]   = [t for _,t in sorted_pairs]
-
-#     ann[sig]['sample_peak_positions'] = sample_peaks
-#     ann[sig]['time_peak_positions']   = time_peaks
-
-#     return ann
-
-# 3) Redraw on window or annotation change
-@app.callback(
-    Output('signal-plots','figure'),
-    [ Input('current-window','data'),
-      Input('annotations','data') ]
-)
-def update_plots(window_idx, annotations):
-    # ctx       = callback_context
-    # triggered = ctx.triggered[0]['prop_id'] if ctx.triggered else None
-
-    # # ONLY treat clear-all as a clear if the user actually clicked (n_clicks > 0)
-    # if triggered == 'clear-all-btn.n_clicks' and clear_n and clear_n > 0:
-    #     # force annotations to empty
-    #     annotations = { sig: {'sample_peak_positions': [], 'time_peak_positions': []}
-    #                     for sig in annotations.keys() }
-    # slice your real data
-    start = window_idx * WIN_SAMPLES
-    end   = start + WIN_SAMPLES
-    t   = session.signals['t'][start:end]
-    ecg = session.signals['ecg'][start:end]
-    ppg = session.signals['ppg'][start:end]
-    abp = session.signals['abp'][start:end]
-
-    # build figure
-    fig = generate_shared_xaxis_figure(ecg, ppg, abp, t)
-    fig.data = [
-    tr for tr in fig.data
-    if not (isinstance(tr.uid, str) and tr.uid.endswith("-manual-"))]
-
-    peak_color_map = {'ecg':'red','ppg':'blue','abp':'black'}
-    row_map        = {'ecg':1,'ppg':2,'abp':3}
-
-    start_sample = window_idx * WIN_SAMPLES
-    end_sample   = start_sample + WIN_SAMPLES
-
-    # vectorized overlay:
-    for sig, data in (annotations or {}).items():
-        # load lists into arrays
-        samples = np.array(data.get('sample_peak_positions', []), dtype=int)
-        times   = np.array(data.get('time_peak_positions',    []), dtype=float)
-
-        # mask down to the current window
-        mask  = (samples >= start_sample) & (samples <  end_sample)
-        if not mask.any():
-            continue
-
-        win_samples = samples[mask]
-        win_times   = times[mask]
-        # fetch y-values in one vectorized slice
-        y_vals      = session.signals[sig][win_samples]
-
-        # add a single scatter trace for all peaks of this signal
-        fig.add_trace(
-            go.Scatter(x=win_times,y=y_vals,
-                mode='markers',name=f"{sig}-manual-{win_samples}",showlegend=False,
-                marker=dict(
-                    symbol='x',
-                    size=10,
-                    color=peak_color_map[sig]
-                ),
-            ),
-            row=row_map[sig], col=1)
-
-    return fig
-
-
-@app.callback(
-    Output('annotations', 'data'),
-    [
-      Input('signal-plots',  'clickData'),
-      Input('clear-all-btn', 'n_clicks')
-    ],
-    [
-      State('mode-selector',  'value'),
-      State('annotations',     'data'),
-      State('current-window',  'data')
-    ],
-    prevent_initial_call=True
-)
-def modify_annotations(clickData, clear_n, mode, ann, window_idx):
-    # 1) Figure out what fired us
-    new_ann = { sig: data.copy() for sig, data in (ann or {}).items() }
-
-
-    if clickData:
-        return modify_peak_logic(clickData, new_ann, window_idx, mode)
-
-    elif clear_n:
-        # 2) Start from the existing store (or empty template)
-        new_ann = ann.copy() if isinstance(ann, dict) else initial_ann.copy()
-        # only clear this window’s peaks
-        start, end = window_idx*WIN_SAMPLES, (window_idx+1)*WIN_SAMPLES
-        for sig, data in new_ann.items():
-            sp = data.get('sample_peak_positions', [])
-            tp = data.get('time_peak_positions',    [])
-            kept = [(s,t) for s,t in zip(sp,tp) if not (start <= s < end)]
-            if kept:
-                s_kept, t_kept = map(list, zip(*kept))
-            else:
-                s_kept, t_kept = [], []
-            new_ann[sig]['sample_peak_positions'] = s_kept
-            new_ann[sig]['time_peak_positions']   = t_kept
-        return new_ann
-    
-    else:
-        raise PreventUpdate
-    
-        # nothing relevant clicked
-   
-
-
-
-
-
 
 @app.callback(
     Output('metadata-display','children'),
-    [ Input('annotations','data'),
-      Input('current-window','data') ],
+    [Input('annotations','data'),
+      Input('current-window','data')],
+    prevent_initial_call=True,
 )
 def debug_annotations(ann, widx):
-    """
-    ann: the annotations dict, e.g.
-      {
-        'ecg': {
-          'sample_peak_positions': [...],
-          'time_peak_positions':   [...],
-          'peak_amplitudes':        [...],
-          'windows':                [...],
-          # …any other keys…
-        },
-        'ppg': { … },
-        'abp': { … }
-      }
-    widx: zero-based window index
-    """
+    if ann is None or widx is None:
+        raise PreventUpdate
+
+    # window bounds (in samples & seconds)
     window_lo_sample = widx * WIN_SAMPLES
     window_hi_sample = (widx + 1) * WIN_SAMPLES
     window_lo_time   = widx * WIN_LEN_SEC
     window_hi_time   = (widx + 1) * WIN_LEN_SEC
 
+    # start building our output
     out = {
         "window_index": widx,
+        "window_label": ann.get('window_label', ""),
         "signals": {}
     }
-
+    # 2) now filter each signal’s lists by the window bounds
     for sig, data in (ann or {}).items():
+        # skip the top‐level window_label entry
+        if sig == 'window_label':
+            continue
         sig_out = {}
         for key, vals in data.items():
+            # pass through any non-list values
             if not isinstance(vals, list):
-                # not a list? just copy it over
                 sig_out[key] = vals
                 continue
-
-            # numeric list → try to filter by window
-            filtered = []
             if 'sample' in key:
-                # interpret values as sample indices
-                filtered = [v for v in vals
-                            if window_lo_sample <= v < window_hi_sample]
+                sig_out[key] = [v for v in vals if window_lo_sample <= v < window_hi_sample]
             elif 'time' in key:
-                # interpret values as time stamps
-                filtered = [v for v in vals
-                            if window_lo_time   <= v < window_hi_time]
+                sig_out[key] = [v for v in vals if window_lo_time   <= v < window_hi_time]
             else:
-                # unknown numeric list — leave unfiltered
-                filtered = vals
-
-            sig_out[key] = filtered
-
+                sig_out[key] = vals
         out["signals"][sig] = sig_out
-
     return html.Pre(json.dumps(out, indent=2))
+
+@app.callback(
+    Output("internal-context-test-output", "children"),
+    Input("internal-context-test-button", "n_clicks"),
+    prevent_initial_call=True
+)
+def simple_context_test_callback(n_clicks):
+    # It's good practice to import callback_context inside the function if you only use it there,
+    # or at the top of the file if used in multiple callbacks.
+    from dash import callback_context
+    ctx = callback_context
+    try:
+        triggered_id = ctx.triggered_id
+        return f"Context Test SUCCESSFUL. Triggered by: '{triggered_id}'. Clicks: {n_clicks}."
+    except LookupError as e:
+        return f"Context Test FAILED with LookupError: {e}. `callback_context` is not available."
+    except Exception as e:
+        return f"Context Test FAILED with an unexpected error: {e}"
