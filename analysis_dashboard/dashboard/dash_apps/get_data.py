@@ -6,41 +6,13 @@ import plotly.graph_objects as go
 # --- Dummy session generation -----------------------------------------------
 
 FS = 125                    # sampling rate
-DURATION_SEC = 30 * 60     # 30 minutes
+MINUTES = 30
+DURATION_SEC = MINUTES * 60     # 30 minutes
 TOTAL_SAMPLES = DURATION_SEC * FS
 # Constants for windowing
 WIN_LEN_SEC = 10          # seconds per window
 WIN_SAMPLES = WIN_LEN_SEC * FS
-NUM_WINDOWS = 180         # total windows (adjust based on data length)
-
-t_full = np.arange(TOTAL_SAMPLES) / FS
-
-# Synthetic signals:
-# ecg_full = 0.5 * np.sin(2 * np.pi * 1.2 * t_full) \
-#            + 0.05 * np.random.randn(TOTAL_SAMPLES)
-# ppg_full = 0.8 * np.cos(2 * np.pi * 1.0 * t_full) \
-#            + 0.02 * np.random.randn(TOTAL_SAMPLES)
-# abp_full = 0.6 * np.sin(2 * np.pi * 1.1 * t_full + 0.5) \
-#            + 0.03 * np.random.randn(TOTAL_SAMPLES)
-
-# # Fake PPG-peak predictions every ~1 s:
-# ppg_peaks = list(np.where(np.diff(np.signbit(np.diff(ppg_full))) < 0)[0] + 1)
-
-# Build a SimpleNamespace to mimic your real session
-# session = SimpleNamespace(
-#     fs=FS,
-#     signals={
-#         't':t_full,
-#         'ecg': ecg_full,
-#         'ppg': ppg_full,
-#         'abp': abp_full,
-#     },
-#     predictions={
-#         'ppg_peaks': ppg_peaks
-#     }
-# )
-
-
+NUM_WINDOWS = 180         # total windows (adjust based on data length
 
 
 H5_PATH = "data/raw/mimic3_data/mimic3_data_2_1.h5"  # Adjust this as needed
@@ -72,7 +44,7 @@ def load_subject_metadata(subj_id, h5_path=H5_PATH):
         return {
             'fix': load_group(subject_group['fix']),
             'ppg': load_group(subject_group['ppg']),
-            'ekg': load_group(subject_group['ekg']),
+            'ecg': load_group(subject_group['ekg']),
             'bp':  load_group(subject_group['bp']),
         }
 
@@ -88,10 +60,10 @@ def load_window_slice(subj_id, widx, h5_path=H5_PATH):
             "start": start,
             "end": end,
             "fs": fs,
-            "ppg": subj["ppg"]["v"][start:end][()].astype(np.float16).tolist(),
-            "ekg": subj["ekg"]["v"][start:end][()].astype(np.float16).tolist(),
-            "bp":  subj["bp"]["v"][start:end][()].astype(np.float16).tolist(),
-            "t":   (np.arange(start, end) / fs).astype(np.float16).tolist(),
+            "ppg": subj["ppg"]["v"][start:end][()].astype(np.float32).tolist(),
+            "ecg": subj["ekg"]["v"][start:end][()].astype(np.float32).tolist(),
+            "bp":  subj["bp"]["v"][start:end][()].astype(np.float32).tolist(),
+            "t":   (np.arange(start, end) / fs).astype(np.float32).tolist(),
         }
 
 
@@ -157,6 +129,8 @@ def overlay_annotations(fig, annotations, subj_id, window_idx, fs, win_len_sampl
     end = start + win_len_samples
 
     for sig, ann in (annotations or {}).items():
+        if sig == 'window_label':
+            continue
         samples = np.array(ann.get('sample_peak_positions', []), dtype=int)
         times = np.array(ann.get('time_peak_positions', []), dtype=float)
 
@@ -208,7 +182,7 @@ def to_json_serializable(obj):
             # Handle general object arrays
             return [to_json_serializable(v) for v in obj.tolist()]
         else:
-            return obj.astype(np.float16).tolist()
+            return obj.astype(np.float32).tolist()
 
     elif isinstance(obj, (np.integer, np.int64, np.int32)):
         return int(obj)
@@ -227,6 +201,12 @@ def to_json_serializable(obj):
 
     elif isinstance(obj, str):
         return obj
+
+    elif isinstance(obj, int): 
+        return obj
+    elif isinstance(obj, float): 
+        return obj
+        
 
     else:
         raise TypeError(f"Cannot serialize: {repr(obj)} of type {type(obj)}")

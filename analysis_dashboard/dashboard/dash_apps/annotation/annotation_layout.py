@@ -2,9 +2,14 @@ from dash import html, dcc
 import dash_bootstrap_components as dbc
 from ..generate_shared_axis_figure import generate_shared_xaxis_figure
 import numpy as np
-from ..get_data import WIN_SAMPLES,get_subject_ids,to_json_serializable
+from ..get_data import WIN_SAMPLES,get_subject_ids
 
 subject_options = [{"label": sid, "value": sid} for sid in get_subject_ids()]
+initial_ann = {'window_label': "",
+    'ecg': {'sample_peak_positions': [],'time_peak_positions': []},
+    'ppg': {'sample_peak_positions': [],'time_peak_positions': []},
+    'abp': {'sample_peak_positions': [],'time_peak_positions': []}
+    }
 
 title_row_style = {
         'paddingTop': '0.25rem',
@@ -30,38 +35,20 @@ plots_column_style = {
     'padding': '0',         # No internal padding in the column
     'margin': '0'
 }
-initial_ann = {
-    'ecg': {'sample_peak_positions': [],'time_peak_positions': [], 'windows': []},
-    'ppg': {'sample_peak_positions': [],'time_peak_positions': [], 'windows': []},
-    'abp': {'sample_peak_positions': [],'time_peak_positions': [], 'windows': []}
-    }
+
 
 zeros = np.zeros(WIN_SAMPLES)
 initial_fig = generate_shared_xaxis_figure(zeros, zeros, zeros, zeros)
 def serve_layout():
     return dbc.Container([
         dcc.Store(id='annotations', data=initial_ann),
+        dcc.Store(id="reset-annotations-trigger"),
         dcc.Store(id="subject-data-cache"),
         dcc.Store(id='subject-metadata-cache', data={}),
         dcc.Store(id='current-subject-id', data=None),
-        dcc.Store(id='current-window', data=0),
-
-        html.Div([
-        html.Label("Select Subject:", style={"marginRight": "10px"}),
-        dcc.Dropdown(
-            id='subject-dropdown',
-            options=subject_options,
-            placeholder='Select a subject',
-            style={'width': '300px'}
-        ),
-        html.Button('Load Subject', id='load-subject-btn', n_clicks=0, style={"marginLeft": "10px"})
-    ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '20px'}),
-
-    # dcc.Store(id='subject-data-cache', data={}),
-    # dcc.Store(id='current-subject-id', data=None),
+        dcc.Store(id='current-window', data=-1),
 
     html.Div(id='signal-display-container'),
-        
         dbc.Row([
                 html.H1(
                     "Annotation Dashboard",
@@ -86,11 +73,22 @@ def serve_layout():
                         config={'responsive': True} # Ensure it resizes with container
                     )], md=9, style=plots_column_style),
 
-                dbc.Col([
+            dbc.Col([
+                html.Hr(),
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Subject:"),
+                        dcc.Dropdown(id='subject-dropdown',options=subject_options,placeholder='Select a subject'),
+                        ]),
+                    dbc.Col([dbc.Button('Load', id='load-subject-btn',active=False, n_clicks=0)]),
+                    ]),
+
+                    html.Hr(),
                     html.Div([
-                        html.Button("Prev Window", id='prev-window-btn', n_clicks_timestamp=0, className='me-2'),
-                        html.Button("Next Window", id='next-window-btn',n_clicks_timestamp=0)
+                        dbc.Button("Prev Window", id='prev-window-btn', n_clicks=0,n_clicks_timestamp=0, className='me-2'),
+                        dbc.Button("Next Window", id='next-window-btn',n_clicks=0,n_clicks_timestamp=0)
                     ], className='me-3'),
+                
                     html.Hr(),
                     
                     dbc.Row([
@@ -102,10 +100,9 @@ def serve_layout():
                                 {'label':'Remove Peak', 'value':'remove'},],
                             value='add',inline=True),
                         ]),
-                        dbc.Col([
-                            html.Button("Clear All Peaks", id="clear-all-btn", className="mt-2 btn-danger",n_clicks=0),
-                        ]),
+                        dbc.Col([dbc.Button("Clear All Peaks", id="clear-all-btn", className="mt-2 btn-danger",n_clicks=0)]),
                     ]),
+
                     html.Hr(),
                     html.H5("Window Label"),
                     dbc.Row([
@@ -119,37 +116,26 @@ def serve_layout():
                                 ],
                                 value='clean'),
                         ],width=9),
-                        dbc.Col([
-                            html.Button("Add", id='add-label-btn',n_clicks_timestamp=0, className='me-1'),
-                        ],width=3),
+                        dbc.Col([dbc.Button("Add", id='add-label-btn',active=False,n_clicks=0,n_clicks_timestamp=0, className='me-1')],width=3),
                     ]),
 
                     html.Hr(),
                     html.H5("Jump to Time (s)"),
                     dbc.Row([
-                        dbc.Col([
-                            dcc.Input(id='jump-to-input', type='number', value=0, min=0),
-                        ],width=9),
-                        dbc.Col([
-                            html.Button("Go", id='jump-go-btn', className='me-4'),
-                        ],width=3),
-
+                        dbc.Col([dcc.Input(id='jump-to-input', type='number', value=0, min=0)],width=9),
+                        dbc.Col([dbc.Button("Go", id='jump-go-btn', className='me-4')],width=3),
                     ]),
                     
                     html.Hr(),
                     dbc.Row([
-                        html.Button("Save Annotations", id='save-btn', className='float-end')
+                        dbc.Col([dbc.Button("Save", id='save-btn', className='float-end')],style={'gridGrow': 1,'gridShrink': 1,'margin': '0.5l'}),
+                        dbc.Col([dbc.Button("Export", id='export-btn', className='float-end')],style={'gridGrow': 1,'gridShrink': 1,'margin': '-0.5l'}),
                     ]),
+
                     html.Hr(),
-                    
                     dbc.Row([html.Div(id='metadata-display', children="Metadata will appear here")]),
-                    
                 ], width=3, style={'height': '60%'})
             ], className='me-5'),
-
-        # dbc.Row([
-        #     d
-        # ], style={'height': '60%'}),
 
 
         ], fluid=True, style={'height': '50%', 'padding': '0', 'margin': '0'})
