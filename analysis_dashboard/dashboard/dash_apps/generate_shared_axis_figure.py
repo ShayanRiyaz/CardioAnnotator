@@ -45,4 +45,5 @@ def generate_shared_xaxis_figure(y_ecg, y_ppg, y_abp, t):
         margin=dict(l=None,r=10,t=30,b=None), 
     )
 
+
     return fig
