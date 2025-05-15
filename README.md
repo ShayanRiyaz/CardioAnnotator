@@ -2,7 +2,7 @@
 
 # Current Work:
 
-![image](https://github.com/user-attachments/assets/e0beff56-9ec1-46d8-871a-36df3b89460d)
+![image](https://github.com/user-attachments/assets/5c6f960c-6cfe-47f5-800f-ff51e3cd92a2)
 
 
 
