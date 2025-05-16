@@ -142,13 +142,10 @@ def overlay_annotations(fig, annotations, subj_id, window_idx, fs, win_len_sampl
         win_samples = samples[mask]
         win_times = times[mask]
 
-        # x = time relative to this window
         x = win_times
         y = np.array([])
 
         try:
-            # You already loaded signal data for this window in the main callback,
-            # so slice it directly from fig traces if needed, but better:
             trace = fig['data'][row_map[sig]-1]  # Access the base signal trace
             signal_y = trace['y']
             y = np.array([signal_y[int(s - start)] for s in win_samples])

@@ -27,7 +27,7 @@ single_graph_style = {
 
 # Column style for the plots
 plots_column_style = {
-    'height': '60%',       # This should resolve to 100vh from parent Row
+    'height': '75%',       # This should resolve to 100vh from parent Row
     'gridGrow': 1,          # This is a grid column, so it should take the full height of the row
     'gridShrink': 1,        # This is a grid column, so it should take the full height of the row
     'display': 'flex',      # Use flex to make dcc.Graph fill it
@@ -48,7 +48,7 @@ def serve_layout():
         dcc.Store(id='current-subject-id', data=None),
         dcc.Store(id='current-window', data=-1),
 
-    html.Div(id='signal-display-container'),
+        html.Div(id='signal-display-container'),
         dbc.Row([
                 html.H1(
                     "Annotation Dashboard",
@@ -64,13 +64,20 @@ def serve_layout():
         ),
         html.Hr(style={'margin': '0.5rem 0'}),
 
+
         dbc.Row([
+            # dbc.Col([dcc.Checklist(id='crosshair-toggle',
+            #                       options=[{'label': 'Enable crosshair', 'value': 'enabled'}],
+            #                       value=[],)],style={'height': '2%'},width=1),
             dbc.Col([
                     dcc.Graph(
                         id='signal-plots', # Single ID for the graph component
                         figure=initial_fig,
                         style=single_graph_style,
-                        config={'responsive': True} # Ensure it resizes with container
+                        config={'responsive': True,
+                                # 'editable': True,               # enable general editing
+                                # 'edits': {'shapePosition': True},
+                                },# allow moving shapes} # Ensure it resizes with container
                     )], md=9, style=plots_column_style),
 
             dbc.Col([
@@ -134,7 +141,7 @@ def serve_layout():
 
                     html.Hr(),
                     dbc.Row([html.Div(id='metadata-display', children="Metadata will appear here")]),
-                ], width=3, style={'height': '60%'})
+                ], width=2, style={'height': '15%'})
             ], className='me-5'),
 
 
