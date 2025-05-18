@@ -1,8 +1,8 @@
 from dash import html, dcc
 import dash_bootstrap_components as dbc
-from ..generate_shared_axis_figure import generate_shared_xaxis_figure
+from .generate_shared_axis_figure import generate_shared_xaxis_figure
 import numpy as np
-from ..get_data import WIN_SAMPLES,get_subject_ids
+from .get_data import WIN_SAMPLES,get_subject_ids
 
 subject_options = [{"label": sid, "value": sid} for sid in get_subject_ids()]
 initial_ann = {'window_label': "",

@@ -6,9 +6,9 @@ from django_plotly_dash import DjangoDash
 from dash.exceptions import PreventUpdate
 import plotly.graph_objects as go
 
-from .annotation_layout import serve_layout,initial_ann
-from ..generate_shared_axis_figure import generate_shared_xaxis_figure
-from ..get_data import FS, WIN_SAMPLES, NUM_WINDOWS,WIN_LEN_SEC,to_json_serializable,overlay_annotations,load_subject_metadata,load_window_slice
+from .layout import serve_layout,initial_ann
+from .generate_shared_axis_figure import generate_shared_xaxis_figure
+from .get_data import FS, WIN_SAMPLES, NUM_WINDOWS,WIN_LEN_SEC,to_json_serializable,overlay_annotations,load_subject_metadata,load_window_slice
 
 ASSETS_PATH = os.path.join(
     os.path.dirname(__file__),
@@ -22,7 +22,7 @@ app.layout = serve_layout
 @app.callback(
     Output('subject-metadata-cache', 'data'),
     Output('current-subject-id', 'data'),
-    Output('current-window', 'data'),
+    Output('current-window', 'data',allow_duplicate=True),
     Input('load-subject-btn', 'n_clicks'),
     State('subject-dropdown', 'value'),
     State('subject-metadata-cache', 'data'),

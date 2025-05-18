@@ -14,10 +14,7 @@ from pathlib import Path
 import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-# STATICFILES_DIRS = [
-#     # … any existing entries …
-#     BASE_DIR / "dashboard" / "dash_apps" / "annotation" / "assets",
-# ]
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
@@ -44,7 +41,8 @@ INSTALLED_APPS = [
     'channels',
     'dpd_static_support',
     'bootstrap4',  # optional, for templates
-    'dashboard.apps.DashboardConfig',  # not just 'dashboard'
+    'annotation.apps.AnnotationConfig',
+    # 'processing.apps.ProcessingConfig',
 ]
 
 MIDDLEWARE = [
@@ -60,7 +58,10 @@ MIDDLEWARE = [
     'django_plotly_dash.middleware.ExternalRedirectionMiddleware'
 ]
 
-ROOT_URLCONF = 'analysis_dashboard.urls'
+# NEW
+ROOT_URLCONF   = 'waveform_dashboard.urls'
+ASGI_APPLICATION = 'waveform_dashboard.asgi.application'
+WSGI_APPLICATION = 'waveform_dashboard.wsgi.application'
 
 TEMPLATES = [
     {
@@ -77,7 +78,6 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'analysis_dashboard.wsgi.application'
 # DATA_UPLOAD_MAX_MEMORY_SIZE = 1024*
 
 # Database
@@ -141,6 +141,3 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 X_FRAME_OPTIONS = 'SAMEORIGIN'
-
-# Needed for WebSocket support
-ASGI_APPLICATION = 'myproject.routing.application'
