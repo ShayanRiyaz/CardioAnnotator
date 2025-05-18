@@ -10,13 +10,11 @@ from .layout import serve_layout,initial_ann
 from .generate_shared_axis_figure import generate_shared_xaxis_figure
 from .get_data import FS, WIN_SAMPLES, NUM_WINDOWS,WIN_LEN_SEC,to_json_serializable,overlay_annotations,load_subject_metadata,load_window_slice
 
-ASSETS_PATH = os.path.join(
-    os.path.dirname(__file__),
-    '..', 'dash_apps', 'annotation', 'assets'
-)
-app = DjangoDash("SignalAnnotator", external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME],serve_locally=False)
+app = DjangoDash("SignalAnnotator", 
+                external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME],
+                serve_locally=True,
+                )
 app.layout = serve_layout
-
 
 
 @app.callback(
@@ -69,14 +67,17 @@ def load_subject_metadata_callback(n_clicks, subj_id, metadata_cache):
 # 1) Navigation stays the same
 @app.callback(
     Output('current-window','data'),
-    [Input('prev-window-btn','n_clicks_timestamp'),
-     
-     Input('next-window-btn','n_clicks_timestamp'),
-     Input('jump-go-btn','n_clicks_timestamp')],
-     Input('load-subject-btn', 'n_clicks'),
-     
-    [State('current-window','data'),
-     State('jump-to-input','value')],prevent_initial_call=True
+    [
+        Input('prev-window-btn',    'n_clicks_timestamp'),
+        Input('next-window-btn',    'n_clicks_timestamp'),
+        Input('jump-go-btn',        'n_clicks_timestamp'),
+        Input('load-subject-btn',   'n_clicks'),
+    ],
+    [
+        State('current-window','data'),
+        State('jump-to-input', 'value'),
+    ],
+    prevent_initial_call=True
 )
 def navigate(prev_ts, next_ts, go_ts,load_subject_check, current_idx, jump_sec):
     ctx = dash.callback_context
@@ -108,15 +109,11 @@ def navigate(prev_ts, next_ts, go_ts,load_subject_check, current_idx, jump_sec):
 
 # 3) Redraw on window or annotation change
 @app.callback(
-    Output("signal-plots", "figure"),
-    [
-    Input("current-window", "data"),
-    Input("annotations", "data"),
-    ],
-    [
-    State("current-subject-id", "data"),
-    ],
-    prevent_initial_call=True
+  Output('signal-plots','figure'),
+  Input('current-window','data'),
+  Input('annotations','data'),
+  State('current-subject-id','data'),
+  prevent_initial_call=True
 )
 def update_plots(window_idx,annotations, subj_id):
     if (window_idx is None) or subj_id is None:
@@ -127,7 +124,7 @@ def update_plots(window_idx,annotations, subj_id):
     t, ppg, ecg, abp = window_data["t"], window_data["ppg"], window_data["ecg"], window_data["bp"]
 
     fig = generate_shared_xaxis_figure(ecg, ppg, abp, t)
-    fig = overlay_annotations(fig, annotations, subj_id, window_idx, FS, WIN_SAMPLES)
+    # fig = overlay_annotations(fig, annotations, subj_id, window_idx, FS, WIN_SAMPLES)
     
     return fig
 
@@ -141,47 +138,45 @@ def update_plots(window_idx,annotations, subj_id):
 
 @app.callback(
     Output('annotations', 'data'),
-    Output('signal-plots', 'clickData'),
     [
-      Input('signal-plots',  'clickData'),
+    #   Input('signal-plots',  'clickData'),
       Input('clear-all-btn', 'n_clicks'),
       Input('load-subject-btn', 'n_clicks'),
       Input('add-label-btn',  'n_clicks'),
     ],
     [
-      State('mode-selector',  'value'),
-      State('annotations',     'data'),
-      State('current-window',  'data'),
-      State('window-label-dropdown', 'value'),
-
+    State('annotations',     'data'),
+    State('current-window',  'data'),
+    State('mode-selector',  'value'),
+    State('window-label-dropdown', 'value'),
     ],
     prevent_initial_call=True
 )
-def modify_annotations(clickData, clear_all_clicked,load_subject_clicked,add_label_button_clicked,mode, ann, window_idx,label_value):
+def modify_annotations(clear_n,load_n,add_label_n, ann, window_idx,mode,label_value):
     ctx = dash.callback_context
     trigger_id = ctx.triggered[0]['prop_id']
     if trigger_id is None:
         raise PreventUpdate
     
     if trigger_id == 'add-label-btn.n_clicks':
-        ann = ann.copy()
+        new_ann = new_ann.copy()
         # Overwrite the single-string label
-        ann['window_label'] = label_value
-        return ann, None
+        new_ann['window_label'] = label_value
+        return new_ann
 
     if trigger_id == 'load-subject-btn.n_clicks':
-        return initial_ann.copy(), None
+        return initial_ann.copy()
         
     # # 1) Figure out what fired us
-    new_ann = {
-    sig: (data.copy() if isinstance(data, dict) else data)
-    for sig, data in (ann or {}).items()
-    }
+    # new_ann = {
+    # sig: (data.copy() if isinstance(data, dict) else data)
+    # for sig, data in (ann or {}).items()
+    # }
 
-    if trigger_id == 'signal-plots.clickData':
-        return modify_peak_logic(clickData, new_ann, window_idx, mode), None
+    # if trigger_id == 'signal-plots.clickData':
+        # return modify_peak_logic(clickData, new_ann, window_idx, mode), None
 
-    elif trigger_id == 'clear-all-btn.n_clicks':
+    if trigger_id == 'clear-all-btn.n_clicks':
         # 2) Start from the existing store (or empty template)
         base = ann.copy() if isinstance(ann, dict) else initial_ann.copy()
 
@@ -203,7 +198,7 @@ def modify_annotations(clickData, clear_all_clicked,load_subject_clicked,add_lab
                 s_kept, t_kept = [], []
             new_ann[sig]['sample_peak_positions'] = s_kept
             new_ann[sig]['time_peak_positions']   = t_kept
-        return new_ann, None
+        return new_ann
     
     else:
         raise PreventUpdate
@@ -271,27 +266,6 @@ def modify_peak_logic(clickData, ann, window_idx, mode):
     new_ann[sig]['sample_peak_positions'] = sp
     new_ann[sig]['time_peak_positions']   = tp
     return new_ann
-
-
-
-# @app.callback(
-#     Output('signal-plots', 'figure'),
-#     Input('crosshair-toggle', 'value'),
-#     State('signal-plots', 'figure'),
-#     prevent_initial_call=True
-# )
-# def toggle_crosshair(toggle, fig):
-#     ctx = dash.callback_context
-#     trigger_id = ctx.triggered[0]['prop_id']
-#     if trigger_id != 'crosshair-toggle.value':
-#         return None
-#     enabled = 'enabled' in toggle  # or whatever value you used
-#     # Flip showspikes on every xaxis in the layout
-#     for ax in list(fig.get('layout', {})):
-#         if ax.startswith('xaxis'):
-#             fig['layout'][ax]['showspikes'] = enabled
-#     return fig
-
 
 
 

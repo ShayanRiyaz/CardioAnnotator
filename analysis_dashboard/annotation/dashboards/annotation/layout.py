@@ -41,6 +41,7 @@ zeros = np.zeros(WIN_SAMPLES)
 initial_fig = generate_shared_xaxis_figure(zeros, zeros, zeros, zeros)
 def serve_layout():
     return dbc.Container([
+        
         dcc.Store(id='annotations', data=initial_ann),
         dcc.Store(id="reset-annotations-trigger"),
         dcc.Store(id="subject-data-cache"),

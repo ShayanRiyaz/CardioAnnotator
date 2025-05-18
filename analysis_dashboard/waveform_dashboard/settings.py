@@ -23,8 +23,7 @@ SECRET_KEY = 'django-insecure-(q7w3t%zkl=9eo+r!#%mkwjn3v)*011p5_8)=p3@f%!+hnzy6z
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
-
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 
 # Application definition
@@ -56,6 +55,14 @@ MIDDLEWARE = [
     # Dash Additions
     'django_plotly_dash.middleware.BaseMiddleware',
     'django_plotly_dash.middleware.ExternalRedirectionMiddleware'
+]
+
+PLOTLY_COMPONENTS = [
+    # core Dash components come automatically
+    'dpd_components',          # django-plotly-dash’s own bits
+    'dpd_static_support',      # local support for dash-bootstrap-components, etc.
+    'dash_bootstrap_components',
+    # add any other Dash-* packages you use here
 ]
 
 # NEW
@@ -129,9 +136,14 @@ STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_FINDERS = [
-        'django.contrib.staticfiles.finders.FileSystemFinder',
-        'django.contrib.staticfiles.finders.AppDirectoriesFinder',
-        'django_plotly_dash.finders.DashComponentFinder',
+
+    'django.contrib.staticfiles.finders.FileSystemFinder',
+    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+
+    # these three let Django find your Dash app’s "assets/" folder
+    'django_plotly_dash.finders.DashAssetFinder',
+    'django_plotly_dash.finders.DashComponentFinder',
+    'django_plotly_dash.finders.DashAppDirectoryFinder',
     ]
 
 # Default primary key field type
