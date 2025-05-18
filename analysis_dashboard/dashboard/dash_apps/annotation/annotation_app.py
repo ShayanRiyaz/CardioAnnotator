@@ -22,7 +22,7 @@ app.layout = serve_layout
 @app.callback(
     Output('subject-metadata-cache', 'data'),
     Output('current-subject-id', 'data'),
-    Output('current-window', 'data', allow_duplicate=True),
+    Output('current-window', 'data'),
     Input('load-subject-btn', 'n_clicks'),
     State('subject-dropdown', 'value'),
     State('subject-metadata-cache', 'data'),
