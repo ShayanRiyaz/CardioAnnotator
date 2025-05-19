@@ -1,4 +1,4 @@
-name: .conda
+name: cardio_annotator
 channels:
   - defaults
 dependencies:
