@@ -1,8 +1,8 @@
 from dash import html, dcc
 import dash_bootstrap_components as dbc
-from ..generate_shared_axis_figure import generate_shared_xaxis_figure
+from .utils.generate_shared_axis_figure import generate_shared_xaxis_figure
 import numpy as np
-from ..get_data import WIN_SAMPLES,get_subject_ids
+from .utils.get_data import WIN_SAMPLES,get_subject_ids
 
 subject_options = [{"label": sid, "value": sid} for sid in get_subject_ids()]
 initial_ann = {'window_label': "",
@@ -141,7 +141,7 @@ def serve_layout():
 
                     html.Hr(),
                     dbc.Row([html.Div(id='metadata-display', children="Metadata will appear here")]),
-                ], width=2, style={'height': '15%'})
+                ], width=3, style={'height': '25%'})
             ], className='me-5'),
 
 

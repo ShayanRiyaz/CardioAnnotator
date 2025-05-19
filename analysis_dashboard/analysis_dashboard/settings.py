@@ -144,3 +144,6 @@ X_FRAME_OPTIONS = 'SAMEORIGIN'
 
 # Needed for WebSocket support
 ASGI_APPLICATION = 'myproject.routing.application'
+
+
+H5_PATH = BASE_DIR.parent / "data/raw/mimic3_data/mimic3_data_2_1.h5"  # Adjust this as needed

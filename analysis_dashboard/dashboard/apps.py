@@ -5,4 +5,4 @@ class DashboardConfig(AppConfig):
     name = 'dashboard'
 
     def ready(self):
-        import dashboard.dash_apps.annotation.annotation_app
+        import dashboard.annotations.app

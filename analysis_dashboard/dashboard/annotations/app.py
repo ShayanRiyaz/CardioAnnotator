@@ -6,9 +6,9 @@ from django_plotly_dash import DjangoDash
 from dash.exceptions import PreventUpdate
 import plotly.graph_objects as go
 
-from .annotation_layout import serve_layout,initial_ann
-from ..generate_shared_axis_figure import generate_shared_xaxis_figure
-from ..get_data import FS, WIN_SAMPLES, NUM_WINDOWS,WIN_LEN_SEC,to_json_serializable,overlay_annotations,load_subject_metadata,load_window_slice
+from .layout import serve_layout,initial_ann
+from .utils.generate_shared_axis_figure import generate_shared_xaxis_figure
+from .utils.get_data import FS, WIN_SAMPLES, NUM_WINDOWS,WIN_LEN_SEC,to_json_serializable,overlay_annotations,load_subject_metadata,load_window_slice
 
 ASSETS_PATH = os.path.join(
     os.path.dirname(__file__),
@@ -68,7 +68,7 @@ def load_subject_metadata_callback(n_clicks, subj_id, metadata_cache):
 
 # 1) Navigation stays the same
 @app.callback(
-    Output('current-window','data'),
+    Output('current-window','data',allow_duplicate=True),
     [Input('prev-window-btn','n_clicks_timestamp'),
      
      Input('next-window-btn','n_clicks_timestamp'),

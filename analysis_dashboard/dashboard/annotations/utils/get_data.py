@@ -3,6 +3,9 @@ import numpy as np
 from types import SimpleNamespace
 import h5py
 import plotly.graph_objects as go
+from django.conf import settings
+
+H5_PATH = settings.H5_PATH
 # --- Dummy session generation -----------------------------------------------
 
 FS = 125                    # sampling rate
@@ -15,7 +18,7 @@ WIN_SAMPLES = WIN_LEN_SEC * FS
 NUM_WINDOWS = 180         # total windows (adjust based on data length
 
 
-H5_PATH = "data/raw/mimic3_data/mimic3_data_2_1.h5"  # Adjust this as needed
+
 def get_subject_ids(h5_path=H5_PATH):
     with h5py.File(h5_path, 'r') as f:
         return list(f['subjects'].keys())
