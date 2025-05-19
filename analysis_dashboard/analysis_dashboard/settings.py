@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'dpd_static_support',
     'bootstrap4',  # optional, for templates
     'dashboard.apps.DashboardConfig',  # not just 'dashboard'
+    'dashboard.annotations',
 ]
 
 MIDDLEWARE = [

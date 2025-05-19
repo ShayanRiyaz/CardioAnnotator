@@ -22,7 +22,7 @@ app.layout = serve_layout
 @app.callback(
     Output('subject-metadata-cache', 'data'),
     Output('current-subject-id', 'data'),
-    Output('current-window', 'data'),
+    Output('current-window', 'data',allow_duplicate=True),
     Input('load-subject-btn', 'n_clicks'),
     State('subject-dropdown', 'value'),
     State('subject-metadata-cache', 'data'),
@@ -68,7 +68,7 @@ def load_subject_metadata_callback(n_clicks, subj_id, metadata_cache):
 
 # 1) Navigation stays the same
 @app.callback(
-    Output('current-window','data',allow_duplicate=True),
+    Output('current-window','data'),
     [Input('prev-window-btn','n_clicks_timestamp'),
      
      Input('next-window-btn','n_clicks_timestamp'),
