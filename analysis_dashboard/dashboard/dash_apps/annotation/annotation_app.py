@@ -1,17 +1,20 @@
-import dash, json
-
+import dash, json, os
 from dash.dependencies import Input, Output, State
 from dash import html,no_update
 import dash_bootstrap_components as dbc
 from django_plotly_dash import DjangoDash
 from dash.exceptions import PreventUpdate
+import plotly.graph_objects as go
 
 from .annotation_layout import serve_layout,initial_ann
 from ..generate_shared_axis_figure import generate_shared_xaxis_figure
 from ..get_data import FS, WIN_SAMPLES, NUM_WINDOWS,WIN_LEN_SEC,to_json_serializable,overlay_annotations,load_subject_metadata,load_window_slice
 
-# Init Dash app
-app = DjangoDash("SignalAnnotator", external_stylesheets=[dbc.themes.BOOTSTRAP],serve_locally=False)
+ASSETS_PATH = os.path.join(
+    os.path.dirname(__file__),
+    '..', 'dash_apps', 'annotation', 'assets'
+)
+app = DjangoDash("SignalAnnotator", external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME],serve_locally=False)
 app.layout = serve_layout
 
 
@@ -19,7 +22,7 @@ app.layout = serve_layout
 @app.callback(
     Output('subject-metadata-cache', 'data'),
     Output('current-subject-id', 'data'),
-    Output('current-window', 'data', allow_duplicate=True),
+    Output('current-window', 'data'),
     Input('load-subject-btn', 'n_clicks'),
     State('subject-dropdown', 'value'),
     State('subject-metadata-cache', 'data'),
@@ -54,6 +57,15 @@ def load_subject_metadata_callback(n_clicks, subj_id, metadata_cache):
 
     return metadata_cache, subj_id,0
 
+
+
+
+
+
+
+
+
+
 # 1) Navigation stays the same
 @app.callback(
     Output('current-window','data'),
@@ -62,6 +74,7 @@ def load_subject_metadata_callback(n_clicks, subj_id, metadata_cache):
      Input('next-window-btn','n_clicks_timestamp'),
      Input('jump-go-btn','n_clicks_timestamp')],
      Input('load-subject-btn', 'n_clicks'),
+     
     [State('current-window','data'),
      State('jump-to-input','value')],prevent_initial_call=True
 )
@@ -84,13 +97,25 @@ def navigate(prev_ts, next_ts, go_ts,load_subject_check, current_idx, jump_sec):
     current_idx = int((jump_sec * FS) // WIN_SAMPLES)
     return max(0, min(current_idx, NUM_WINDOWS - 1))
 
+
+
+
+
+
+
+
+
+
 # 3) Redraw on window or annotation change
 @app.callback(
     Output("signal-plots", "figure"),
+    [
     Input("current-window", "data"),
     Input("annotations", "data"),
+    ],
+    [
     State("current-subject-id", "data"),
-    
+    ],
     prevent_initial_call=True
 )
 def update_plots(window_idx,annotations, subj_id):
@@ -102,8 +127,17 @@ def update_plots(window_idx,annotations, subj_id):
     t, ppg, ecg, abp = window_data["t"], window_data["ppg"], window_data["ecg"], window_data["bp"]
 
     fig = generate_shared_xaxis_figure(ecg, ppg, abp, t)
-    fig = overlay_annotations(fig, annotations, subj_id, window_idx, fs, WIN_SAMPLES)
+    fig = overlay_annotations(fig, annotations, subj_id, window_idx, FS, WIN_SAMPLES)
+    
     return fig
+
+
+
+
+
+
+
+
 
 @app.callback(
     Output('annotations', 'data'),
@@ -130,7 +164,6 @@ def modify_annotations(clickData, clear_all_clicked,load_subject_clicked,add_lab
         raise PreventUpdate
     
     if trigger_id == 'add-label-btn.n_clicks':
-        print(label_value)
         ann = ann.copy()
         # Overwrite the single-string label
         ann['window_label'] = label_value
@@ -175,13 +208,23 @@ def modify_annotations(clickData, clear_all_clicked,load_subject_clicked,add_lab
     else:
         raise PreventUpdate
     
+
+
+
+
+
+
+
 def modify_peak_logic(clickData, ann, window_idx, mode):
     """
-    clickData   : the dict from dcc.Graph.clickData
-    ann         : the existing annotations dict (may be {})
-    window_idx  : zero‐based index of the current window
-    mode        : 'add' or 'remove'
-    returns     : a NEW annotations dict with the one peak added or removed
+    Input:
+        clickData   : the dict from dcc.Graph.clickData
+        ann         : the existing annotations dict (may be {})
+        window_idx  : zero‐based index of the current window
+        mode        : 'add' or 'remove'
+    
+    Output:
+        returns     : a NEW annotations dict with the one peak added or removed
     """
     # 1) shallow-copy the top-level dict so we don't mutate in place
     new_ann = {
@@ -230,10 +273,33 @@ def modify_peak_logic(clickData, ann, window_idx, mode):
     return new_ann
 
 
+
+# @app.callback(
+#     Output('signal-plots', 'figure'),
+#     Input('crosshair-toggle', 'value'),
+#     State('signal-plots', 'figure'),
+#     prevent_initial_call=True
+# )
+# def toggle_crosshair(toggle, fig):
+#     ctx = dash.callback_context
+#     trigger_id = ctx.triggered[0]['prop_id']
+#     if trigger_id != 'crosshair-toggle.value':
+#         return None
+#     enabled = 'enabled' in toggle  # or whatever value you used
+#     # Flip showspikes on every xaxis in the layout
+#     for ax in list(fig.get('layout', {})):
+#         if ax.startswith('xaxis'):
+#             fig['layout'][ax]['showspikes'] = enabled
+#     return fig
+
+
+
+
 @app.callback(
     Output('metadata-display','children'),
     [Input('annotations','data'),
-      Input('current-window','data')],
+      Input('current-window','data'),
+      ],
     prevent_initial_call=True,
 )
 def debug_annotations(ann, widx):
@@ -271,21 +337,3 @@ def debug_annotations(ann, widx):
                 sig_out[key] = vals
         out["signals"][sig] = sig_out
     return html.Pre(json.dumps(out, indent=2))
-
-@app.callback(
-    Output("internal-context-test-output", "children"),
-    Input("internal-context-test-button", "n_clicks"),
-    prevent_initial_call=True
-)
-def simple_context_test_callback(n_clicks):
-    # It's good practice to import callback_context inside the function if you only use it there,
-    # or at the top of the file if used in multiple callbacks.
-    from dash import callback_context
-    ctx = callback_context
-    try:
-        triggered_id = ctx.triggered_id
-        return f"Context Test SUCCESSFUL. Triggered by: '{triggered_id}'. Clicks: {n_clicks}."
-    except LookupError as e:
-        return f"Context Test FAILED with LookupError: {e}. `callback_context` is not available."
-    except Exception as e:
-        return f"Context Test FAILED with an unexpected error: {e}"
