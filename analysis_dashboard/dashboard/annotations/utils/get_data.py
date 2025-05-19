@@ -3,6 +3,9 @@ import numpy as np
 from types import SimpleNamespace
 import h5py
 import plotly.graph_objects as go
+from django.conf import settings
+
+H5_PATH = settings.H5_PATH
 # --- Dummy session generation -----------------------------------------------
 
 FS = 125                    # sampling rate
@@ -15,13 +18,30 @@ WIN_SAMPLES = WIN_LEN_SEC * FS
 NUM_WINDOWS = 180         # total windows (adjust based on data length
 
 
-H5_PATH = "data/raw/mimic3_data/mimic3_data_2_1.h5"  # Adjust this as needed
 def get_subject_ids(h5_path=H5_PATH):
+    """
+    Retrieve the list of all subject identifiers stored in the HDF5 dataset.
+
+    Parameters:
+        h5_path (str or Path): Path to the HDF5 file containing subject data
+
+    Returns:
+        list[str]: Ordered list of subject IDs as strings
+    """
     with h5py.File(h5_path, 'r') as f:
         return list(f['subjects'].keys())
 
 def load_subject_metadata(subj_id, h5_path=H5_PATH):
-    """Load only subject metadata and signal info (not full waveform)."""
+    """
+    Load static metadata and signal information for a given subject, excluding raw waveform data.
+
+    Parameters:
+        subj_id (str)           : Identifier of the subject to load
+        h5_path (str or Path)   : Path to the HDF5 file containing subject data
+
+    Returns:
+        dict: Dictionary with keys 'fix', 'ppg', 'ecg', 'bp', each mapping to a metadata dict∂
+    """
     def decode_bytes(val):
         if isinstance(val, (bytes, np.bytes_)):
             return val.decode('utf-8', errors='ignore')
@@ -49,7 +69,21 @@ def load_subject_metadata(subj_id, h5_path=H5_PATH):
         }
 
 def load_window_slice(subj_id, widx, h5_path=H5_PATH):
-    """Load a specific window slice of waveform data."""
+    """
+    Load a specific fixed-length window of waveform samples and corresponding timestamps.
+
+    Parameters:
+        subj_id (str)        : Identifier of the subject
+        widx (int)           : Zero-based window index
+        h5_path (str or Path): Path to the HDF5 file
+
+    Returns:
+        dict: Window data with keys:
+            - 'start', 'end' (int)              : sample indices bounding the window
+            - 'fs' (float)                      : sampling frequency
+            - 'ppg', 'ecg', 'bp' (list[float])  : raw signal values for the window
+            - 't' (list[float])                 : time axis in seconds for each sample
+    """
     with h5py.File(h5_path, 'r') as f:
         subj = f['subjects'][subj_id]
         fs = subj['ppg']['fs'][()]
@@ -67,60 +101,26 @@ def load_window_slice(subj_id, widx, h5_path=H5_PATH):
         }
 
 
-# def get_subject_ids(h5_path=H5_PATH):
-#     with h5py.File(h5_path, 'r') as f:
-#         return list(f['subjects'].keys())
-
-# def load_subject(subj_id, h5_path=H5_PATH):
-#     with h5py.File(h5_path, 'r') as f:
-#         subject_group = f['subjects'][subj_id]
-
-#         def load_group(g):
-#             return {
-#                 k: g[k][()].decode('utf-8') if isinstance(g[k][()], bytes) else g[k][()]
-#                 for k in g.keys()
-#             }
-
-#         return {
-#             'fix': load_group(subject_group['fix']),
-#             'ppg': load_group(subject_group['ppg']),
-#             'ekg': load_group(subject_group['ekg']),
-#             'bp':  load_group(subject_group['bp']),
-#         }
-    
-# _loaded_subjects = {}  # In-memory cache
-
-# def get_subject(subj_id, h5_path=H5_PATH):
-#     if subj_id not in _loaded_subjects:
-#         _loaded_subjects[subj_id] = load_subject(subj_id, h5_path)
-#     return _loaded_subjects[subj_id]
-
-
-# def load_window(subj_id, widx, h5_path=H5_PATH):
-#     with h5py.File(h5_path, 'r') as f:
-#         subj = f['subjects'][subj_id]
-#         start = widx * WIN_SAMPLES
-#         end = start + WIN_SAMPLES
-#         return {
-#             "ppg": subj["ppg"]["v"][start:end][()],
-#             "ekg": subj["ekg"]["v"][start:end][()],
-#             "bp":  subj["bp"]["v"][start:end][()],
-#             "t":   np.arange(start, end) / subj["ppg"]["fs"][()],
-#         }
-
-
-
 def overlay_annotations(fig, annotations, subj_id, window_idx, fs, win_len_samples):
     """
-    Adds peak annotations to a Plotly figure for the given subject window.
+    Overlay user-generated peak markers onto a multi-trace Plotly figure for a specific subject window.
 
     Parameters:
-        fig         : Plotly figure object
-        annotations : dict of signal annotations
-        subj_id     : current subject ID (optional, for logging/debugging)
-        window_idx  : which window (zero-based)
-        fs          : sampling rate
-        win_len_samples : number of samples per window
+        fig (plotly.graph_objs.Figure)  : Base figure with ECG, PPG, ABP traces
+        annotations (dict)              : User annotation store, mapping signal names to peak positions and times
+        subj_id (Any)                   : Identifier for the current subject (used for logging/debugging)
+        window_idx (int)                : Current window index (0-based)
+        fs (float)                      : Sampling rate of the signals (Hz)
+        win_len_samples (int)           : Number of samples per window
+
+    Returns:
+        plotly.graph_objs.Figure    : Original figure with manual peak markers added as scatter traces
+
+    Notes:
+        - Advantage     : Dynamically filters annotations to the visible window, avoiding off-window noise.
+        - Advantage     : Uses signal-to-trace alignment via index arithmetic, ensuring marker accuracy.
+        - Shortcoming   : Relies on hard-coded row mapping; adding new signal types requires manual updates.
+        - Shortcoming   : Converts lists to NumPy arrays on each call, which can add overhead for large annotation sets.
     """
     peak_color_map = {'ecg': 'red', 'ppg': 'blue', 'abp': 'black'}
     row_map = {'ecg': 1, 'ppg': 2, 'abp': 3}
@@ -165,6 +165,17 @@ def overlay_annotations(fig, annotations, subj_id, window_idx, fs, win_len_sampl
     return fig
 
 def to_json_serializable(obj):
+    """
+    Recursively convert complex Python and NumPy objects into JSON-serializable structures.
+
+    Parameters:
+        obj: Any Python or NumPy object (dict, list, ndarray, scalars, bytes) to serialize
+
+    Returns:
+        A JSON-compatible Python primitive (dict, list, int, float, bool, or str)
+
+    Notes: Not built for handling large datasets or arrays.
+    """
     if isinstance(obj, dict):
         return {str(k): to_json_serializable(v) for k, v in obj.items()}
 

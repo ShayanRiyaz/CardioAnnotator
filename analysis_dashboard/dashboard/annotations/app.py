@@ -6,29 +6,45 @@ from django_plotly_dash import DjangoDash
 from dash.exceptions import PreventUpdate
 import plotly.graph_objects as go
 
-from .annotation_layout import serve_layout,initial_ann
-from ..generate_shared_axis_figure import generate_shared_xaxis_figure
-from ..get_data import FS, WIN_SAMPLES, NUM_WINDOWS,WIN_LEN_SEC,to_json_serializable,overlay_annotations,load_subject_metadata,load_window_slice
 
-ASSETS_PATH = os.path.join(
-    os.path.dirname(__file__),
-    '..', 'dash_apps', 'annotation', 'assets'
-)
+from .layout import serve_layout,initial_ann
+from .utils.generate_shared_axis_figure import generate_shared_xaxis_figure
+from .utils.get_data import FS, WIN_SAMPLES, NUM_WINDOWS,WIN_LEN_SEC,to_json_serializable,overlay_annotations,load_subject_metadata,load_window_slice
+
 app = DjangoDash("SignalAnnotator", external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME],serve_locally=False)
 app.layout = serve_layout
-
 
 
 @app.callback(
     Output('subject-metadata-cache', 'data'),
     Output('current-subject-id', 'data'),
-    Output('current-window', 'data'),
+    Output('current-window', 'data',allow_duplicate=True),
     Input('load-subject-btn', 'n_clicks'),
     State('subject-dropdown', 'value'),
     State('subject-metadata-cache', 'data'),
     prevent_initial_call=True
 )
 def load_subject_metadata_callback(n_clicks, subj_id, metadata_cache):
+    """
+    Load and cache the first window of data for a selected subject on demand.
+
+    Parameters:
+        n_clicks (int)       : Number of times "Load Subject" button was clicked
+        subj_id (Any)        : Selected subject identifier from dropdown
+        metadata_cache (dict): Previously cached metadata per subject
+
+    Returns:
+        tuple:
+            - subject-metadata-cache (dict)  : Updated metadata_cache with window-0 data added if needed
+            - current-subject-id (Any)       :  subj_id, to set as the active subject
+            - current-window     (int)       :  0, to set the current window index back to zero
+
+    Notes:
+        - Advantage     : Avoids redundant data loads by checking cache before fetching.
+        - Advantage     : Uses `no_update` to prevent unnecessary downstream resets when data is already cached.
+        - Shortcoming   : Only preloads window 0; additional windows must be fetched later, adding complexity if navigation is rapid.
+        - Shortcoming   : Entire metadata_cache is sent back each time; for many subjects this could become large and impact performance.
+    """
     if not n_clicks or not subj_id:
         raise PreventUpdate
 
@@ -58,27 +74,35 @@ def load_subject_metadata_callback(n_clicks, subj_id, metadata_cache):
     return metadata_cache, subj_id,0
 
 
-
-
-
-
-
-
-
-
 # 1) Navigation stays the same
 @app.callback(
     Output('current-window','data'),
     [Input('prev-window-btn','n_clicks_timestamp'),
-     
      Input('next-window-btn','n_clicks_timestamp'),
      Input('jump-go-btn','n_clicks_timestamp')],
-     Input('load-subject-btn', 'n_clicks'),
-     
     [State('current-window','data'),
      State('jump-to-input','value')],prevent_initial_call=True
 )
-def navigate(prev_ts, next_ts, go_ts,load_subject_check, current_idx, jump_sec):
+def navigate(prev_ts, next_ts, go_ts, current_idx, jump_sec):
+    """
+    Update the current window index based on navigation button clicks or a direct jump input.
+
+    Parameters:
+        prev_ts (float)     : Timestamp (ms) when "Previous Window" button was last clicked
+        next_ts (float)     : Timestamp (ms) when "Next Window" button was last clicked
+        go_ts   (float)     : Timestamp (ms) when "Go" button was last clicked for jump-to
+        current_idx (int)   : Current window index before navigation
+        jump_sec    (float) : Seconds value entered for direct jump
+
+    Returns:
+        current-window (int): New window index, bounded between 0 and NUM_WINDOWS-1
+
+    Notes:
+        - Advantage     : Uses timestamps to unambiguously determine which button was clicked most recently.
+        - Advantage     : Clamps index to valid range, preventing out-of-bounds navigation.
+        - Shortcoming   : Interprets any non-positive or missing jump input as no-op, which may confuse users.
+        - Shortcoming   : Relies on global constants (FS, WIN_SAMPLES, NUM_WINDOWS) and manual timestamp logic; could be simplified with `dash.callback_context` comparisons.
+    """
     ctx = dash.callback_context
     trigger_id = ctx.triggered[0]['prop_id']
     if trigger_id == 'load-subject-btn.n_clicks':
@@ -97,15 +121,6 @@ def navigate(prev_ts, next_ts, go_ts,load_subject_check, current_idx, jump_sec):
     current_idx = int((jump_sec * FS) // WIN_SAMPLES)
     return max(0, min(current_idx, NUM_WINDOWS - 1))
 
-
-
-
-
-
-
-
-
-
 # 3) Redraw on window or annotation change
 @app.callback(
     Output("signal-plots", "figure"),
@@ -119,6 +134,23 @@ def navigate(prev_ts, next_ts, go_ts,load_subject_check, current_idx, jump_sec):
     prevent_initial_call=True
 )
 def update_plots(window_idx,annotations, subj_id):
+    """
+    Redraw the multi-signal figure and reapply any user annotations when data context changes.
+
+    Parameters:
+        window_idx (int): Index of the current time window (0-based)
+        annotations (dict): Annotations dict containing per-signal peak positions and labels
+        subj_id (Any): Identifier for the current subject whose data is displayed
+
+    Returns:
+        plotly.graph_objs.Figure: A new figure with ECG, PPG, ABP traces and overlayed annotations
+
+    Notes:
+        - Advantage     : Always generates the figure from raw data, ensuring reproducible plots and clean state.
+        - Advantage     : Clear separation: data loading, base figure creation, then annotation overlay.
+        - Shortcoming   : Full redraw for every annotation or window change can be inefficient for large windows.
+        - Shortcoming   : Does not debounce rapid updates; consider client-side handling or caching for smoother UX.
+    """
     if (window_idx is None) or subj_id is None:
         raise PreventUpdate
     
@@ -130,14 +162,6 @@ def update_plots(window_idx,annotations, subj_id):
     fig = overlay_annotations(fig, annotations, subj_id, window_idx, FS, WIN_SAMPLES)
     
     return fig
-
-
-
-
-
-
-
-
 
 @app.callback(
     Output('annotations', 'data'),
@@ -158,6 +182,30 @@ def update_plots(window_idx,annotations, subj_id):
     prevent_initial_call=True
 )
 def modify_annotations(clickData, clear_all_clicked,load_subject_clicked,add_label_button_clicked,mode, ann, window_idx,label_value):
+    """
+    Handle all user-driven annotation events: peak addition/removal, label setting, and resets.
+
+    Parameters:
+        clickData (dict)         : Plotly clickData dict when user clicks on plot
+        clear_n   (int)          : n_clicks count for "Clear All" button
+        load_n    (int)          : n_clicks for "Load Subject" button
+        add_label_n (int)        : n_clicks for "Add Label" button
+        mode      (str)          : 'add' or 'remove' peak mode
+        ann       (dict)         : Current annotations store
+        window_idx(int)          : Index of the current time window
+        label_value (str)        : The user-selected label for this window
+
+    Returns:
+        tuple:
+            - annotations (dict) : Updated annotations dict
+            - clickData (None)   : Clears clickData to avoid retrigger loops
+
+    Notes:
+        - Advantage     : Consolidates all annotation triggers into one callback, centralizing state management.
+        - Advantage     : Uses shallow copies and `no_update` semantics for minimal, controlled state changes.
+        - Shortcoming   : Logic branches heavily on `trigger_id`, which can become unwieldy as more inputs are added.
+        - Shortcoming   : Resets the entire annotation store on subject load; partial resets or diffing might improve performance.
+    """
     ctx = dash.callback_context
     trigger_id = ctx.triggered[0]['prop_id']
     if trigger_id is None:
@@ -207,24 +255,26 @@ def modify_annotations(clickData, clear_all_clicked,load_subject_clicked,add_lab
     
     else:
         raise PreventUpdate
-    
-
-
-
-
-
-
 
 def modify_peak_logic(clickData, ann, window_idx, mode):
+
     """
-    Input:
-        clickData   : the dict from dcc.Graph.clickData
-        ann         : the existing annotations dict (may be {})
-        window_idx  : zero‐based index of the current window
-        mode        : 'add' or 'remove'
-    
-    Output:
-        returns     : a NEW annotations dict with the one peak added or removed
+    Add or remove a single peak annotation for a given signal at the clicked location.
+
+    Parameters:
+        clickData (dict): dcc.Graph.clickData event dictionary with point info
+        ann (dict)      :    Existing annotations, keyed by signal names
+        window_idx (int): Zero-based index of the current time window
+        mode (str)      :    'add' to insert or 'remove' to delete peaks
+
+    Returns:
+        dict: A new annotations dictionary with the update applied
+
+    Notes:
+        - Advantage     : Performs a shallow copy to avoid mutating original data and ensures chronological order by sorting peaks after every update.
+        - Advantage     : Clear separation between 'add' and 'remove' modes, making it easy to follow and maintain.
+        - Shortcoming   : Sorting the entire list on each modification can become inefficient for large numbers of annotations (O(n log n) per click).
+        - Shortcoming   : Removes peaks based on a fixed ±1 sample tolerance, which might not capture all edge cases in noisy signals.
     """
     # 1) shallow-copy the top-level dict so we don't mutate in place
     new_ann = {
@@ -273,36 +323,23 @@ def modify_peak_logic(clickData, ann, window_idx, mode):
     return new_ann
 
 
-
-# @app.callback(
-#     Output('signal-plots', 'figure'),
-#     Input('crosshair-toggle', 'value'),
-#     State('signal-plots', 'figure'),
-#     prevent_initial_call=True
-# )
-# def toggle_crosshair(toggle, fig):
-#     ctx = dash.callback_context
-#     trigger_id = ctx.triggered[0]['prop_id']
-#     if trigger_id != 'crosshair-toggle.value':
-#         return None
-#     enabled = 'enabled' in toggle  # or whatever value you used
-#     # Flip showspikes on every xaxis in the layout
-#     for ax in list(fig.get('layout', {})):
-#         if ax.startswith('xaxis'):
-#             fig['layout'][ax]['showspikes'] = enabled
-#     return fig
-
-
-
-
 @app.callback(
     Output('metadata-display','children'),
     [Input('annotations','data'),
-      Input('current-window','data'),
-      ],
+    Input('current-window','data'),],
     prevent_initial_call=True,
 )
 def debug_annotations(ann, widx):
+    """
+    Generate a JSON-formatted debug view of annotations filtered to the current window.
+
+    Parameters:
+        ann (dict): Full annotations store, including peak positions and window labels
+        widx (int): Current window index (0-based)
+
+    Returns:
+        dash_html_components.Pre: A <pre> block containing the filtered metadata as JSON∂
+    """
     if ann is None or widx is None:
         raise PreventUpdate
 

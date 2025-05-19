@@ -5,6 +5,18 @@ from plotly.subplots import make_subplots
 
 
 def generate_shared_xaxis_figure(y_ecg, y_ppg, y_abp, t):
+    """
+    Generate a three-row Plotly figure with a shared time axis for ECG, PPG, and ABP signals.
+
+    Parameters:
+        y_ecg (list[float]) : Voltage values for the ECG trace
+        y_ppg (list[float]) : Values for the PPG trace
+        y_abp (list[float]) : Values for the ABP trace
+        t (list[float])     :   Common time axis in seconds for all signals
+
+    Returns:
+        plotly.graph_objs.Figure: A figure with three aligned subplots showing ECG, PPG, and ABP.
+    """
     X_AXES_FONT_SIZE = Y_AXES_FONT_SIZE = 12
     X_AXIS_RANGE = [t[0],t[-1]+(t[1]-t[0])]
     fig = make_subplots(
@@ -44,6 +56,5 @@ def generate_shared_xaxis_figure(y_ecg, y_ppg, y_abp, t):
         showlegend=False, 
         margin=dict(l=None,r=10,t=30,b=None), 
     )
-
 
     return fig
